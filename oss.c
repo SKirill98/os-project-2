@@ -15,16 +15,6 @@ int main(int argc, char *argv[]) {
     int shm_key;
     int shm_id;
 
-    // PCB
-    struct PCB {
-        int occupied; // 0 for free, 1 for occupied
-        pid_t pid; // Process ID of this child
-        int start_sec; // Start time in seconds
-        int start_nanosec; // Start time in nanoseconds
-        int ending_time_sec; // Ending time in seconds
-        int ending_time_nanosec; // Ending time in nanoseconds
-    }
-
     while ((opt = getopt (argc, argv, "hn:s:t:i:")) != -1) {
         switch (opt) {
             case 'h':
@@ -89,56 +79,65 @@ int main(int argc, char *argv[]) {
     int total_launched = 0;
     int status;
 
-    // Launch first children batch obeying process limit and time bound limits
-    while (running < s && total_launched < n) {
-        pid_t pid = fork();
-        if (pid == 0) {
-            // In child process
-            execl("./worker", "worker", NULL); // Replace with actual worker executable
-            fprintf(stderr, "Child: Failed to execute worker\n");
-            exit(1);
-        } else if (pid > 0) {
-            // In parent process
-            running++;
-            total_launched++;
-        } else {
-            fprintf(stderr, "Parent: Failed to fork\n");
-            return 1;
-        }
-    }
+    // PCB
+    struct PCB {
+        int occupied; // 0 for free, 1 for occupied
+        pid_t pid; // Process ID of this child
+        int start_sec; // Start time in seconds
+        int start_nanosec; // Start time in nanoseconds
+        int ending_time_sec; // Ending time in seconds
+        int ending_time_nanosec; // Ending time in nanoseconds
+    };
 
-    /*
-    while (stillShildrenToLaunch) || haveChildrenInSystem) {
-        incrementClock();
+    struct PCB processTable[20]; // Process table to keep track of child processes
 
-        Every half a second of simulated clock time, output the process table to the screen.
+    // Main loop to manage child processes
+    while (total_launched < n || running > 0) {
         
-        checkIfChildHasTermnated():
-
-        if (childTerminated) {
-            updatePCBForTerminatedChild();
-            running--;
-        }
-        
-        possiblyLaunchNewChild(); // Obeying process limit and time bound limits
-    }
-    */
-   while (total_launched < n || running > 0) {
-        // Increment clock
+        // increment the simulated clock
         (*nanosec) += 10000000; // Increment by 0.01 seconds
         if (*nanosec >= 1000000000) {
             *sec += 1;
             *nanosec -= 1000000000;
         }
 
-        // Check for terminated children
-        pid_t pid = waitpid(-1, &status, WNOHANG);
-        if (pid > 0) {
-            // Update PCB for terminated child (not implemented here)
-            running--;
+        // Every half a second simulated clock time, output the process table on the screen.
+        if (*nanosec % 500000000 == 0) {
+            printf("Current simulated time: %d seconds and %d nanoseconds\n", *sec, *nanosec);
+            // Here you would also print the process table (PCBs)
+            for (int i = 0; i < 18; i++) {
+                if (pcb[i].occupied == 1) {
+                    printf("PCB[%d]: PID=%d, Start=%d.%d, End=%d.%d\n", i, pcb[i].pid, pcb[i].start_sec, pcb[i].start_nanosec, pcb[i].ending_time_sec, pcb[i].ending_time_nanosec);
+                }
+            }
         }
 
-        // Possibly launch new child (not implemented here)
+        // Wait for any child process to finish
+        pid_t pid = waitpid(-1, &status, WNOHANG);
+        if (pid > 0) {
+            // Update PCB for terminated child
+            running--;
+        }
+        
+        // Check if we can launch a new child process
+        if (running < s && total_launched < n && (*sec >= i * total_launched)) {
+            pid_t pid = fork();
+            if (pid == 0) {
+                // Child process
+                char *args[] = {"./worker", NULL}; // ./worker [seconds to run] [nanosec to run], for example
+                execlp(args[0],args[0],(char *)0);
+
+                fprintf(stderr, "Child: Failed to execute worker\n");
+                return 1;
+            } else if (pid > 0) {
+                // Parent process
+                running++;
+                total_launched++;
+            } else {
+                fprintf(stderr, "Parent: Failed to fork\n");
+                return 1;
+            }
+        }
     }
 
     return 0;
