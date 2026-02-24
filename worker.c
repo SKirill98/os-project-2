@@ -5,12 +5,40 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
+const int BUFF_SZ = sizeof(int)*2;
+int shm_key;
+int shm_id;
+
 int main() {
-	
-	// Shared memory
-	
-	
-	// Process
+    // Shared memory
+    int shm_key = ftok("memmain.c",0);
+    if (shm_key <= 0 ) {
+        fprintf(stderr,"Child:... Error in ftok\n");
+        exit(1);
+    }
+    // Create shared memory segment
+    int shm_id = shmget(shm_key,BUFF_SZ,0700);
+    if (shm_id <= 0 ) {
+        fprintf(stderr,"child:... Error in shmget\n");
+        exit(1);
+    }
+    // Attach to the shared memory segment
+    int *clock = (int *)shmat(shm_id,0,0);
+    if (clock <= 0) {
+        fprintf(stderr,"Child:... Error in shmat\n");
+        exit(1);
+    }
+    // Access the shared memory
+    int *sec = &(clock[0]);
+    int *nano = &(clock[1]);
 
+    printf("Child:\t sec %d , nanosecond %d\n",*sec, *nano);
+    printf("Changing clock to 5 , 13\n");
+    // Update the shared memory values
+    *sec = 5;
+    *nano = 13;
 
+    printf("Child:\t sec %d , nanosecond %d\n",*sec, *nano);
+    printf("Child terminating\n");
+    shmdt(clock);
 }
