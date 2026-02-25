@@ -77,6 +77,7 @@ int main(int argc, char *argv[]) {
 
     if (n <= 0 || s <= 0 || t <= 0 || i < 0) {
         fprintf(stderr, "Missing or invalid required arguments\n");
+        printf("Usage: %s [-h] [-n proc] [-s simul] [-t timelimitForChildren] [-i intervalInSecondsToLaunchChildren]\n", argv[0]);
         return 1;
     }
 
@@ -134,8 +135,7 @@ int main(int argc, char *argv[]) {
     struct PCB table[MAX_PCB];
 
     // Initialize table
-    for (int j = 0; j < MAX_PCB; j++)
-        table[j].occupied = 0;
+    memset(table, 0, sizeof(table));
 
     int running = 0;
     int total_launched = 0;
@@ -147,7 +147,7 @@ int main(int argc, char *argv[]) {
     while (total_launched < n || running > 0) {
 
         // Increment simulated clock
-        *nano += 10000000;   // 10ms
+        *nano += 1000;   // 0.001ms
         if (*nano >= BILLION) {
             (*sec)++;
             *nano -= BILLION;

@@ -19,8 +19,6 @@ int main(int argc, char *argv[]) {
     int run_sec = atoi(argv[1]);
     int run_nano = atoi(argv[2]);
     
-    printf("WORKER PID:%d PPID:%d\n", getpid(), getppid());
-    printf("Interval: %d seconds, %d nanoseconds\n", run_sec, run_nano);
     
     // Shared memory
     int shm_key = ftok("oss.c", 'R');
@@ -58,6 +56,10 @@ int main(int argc, char *argv[]) {
         term_nano -= 1000000000;
     }
 
+    printf("WORKER PID:%d PPID:%d\n", getpid(), getppid());
+    printf("SysClockS:%d SysClockNano:%d TermTimeS:%d TermTimeNano:%d\n", start_sec, start_nano, term_sec, term_nano);
+    printf("--Just Starting\n");
+
     int last_printed_sec = start_sec;
 
     while (1) {
@@ -65,7 +67,7 @@ int main(int argc, char *argv[]) {
         if (*sec > term_sec || (*sec == term_sec && *nano >= term_nano)) {
             printf("WORKER PID:%d PPID:%d\n", getpid(), getppid());
             printf("SysClockS:%d SysClockNano:%d TermTimeS:%d TermTimeNano:%d\n", start_sec, start_nano, term_sec, term_nano);
-            printf("--Just Starting\n");
+            printf("--Terminating\n");
             break;
         }
 
