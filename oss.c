@@ -48,8 +48,8 @@ int main(int argc, char *argv[]) {
                 printf("Usage: %s [-h] [-n proc] [-s simul] [-t timelimitForChildren] [-i intervalInSecondsToLaunchChildren]\n", argv[0]);
                 printf("  -h: Display this help message and exit\n");
                 printf("  -n proc   Total number of child processes to launch\n");
-				printf("  -s simul  Maximum number of children running simultaneously\n");
-				printf("  -t iter   The amount of simulated time each child runs\n");
+				        printf("  -s simul  Maximum number of children running simultaneously\n");
+				        printf("  -t iter   The amount of simulated time each child runs\n");
                 printf("  -i sec    Interval in simulated seconds to launch new children\n");
                 return 0;
             case 'n':
@@ -68,8 +68,8 @@ int main(int argc, char *argv[]) {
                 printf("Usage: %s [-h] [-n proc] [-s simul] [-t timelimitForChildren] [-i intervalInSecondsToLaunchChildren]\n", argv[0]);
                 printf("  -h: Display this help message and exit\n");
                 printf("  -n proc   Total number of child processes to launch\n");
-				printf("  -s simul  Maximum number of children running simultaneously\n");
-				printf("  -t iter   The amount of simulated time each child runs\n");
+				        printf("  -s simul  Maximum number of children running simultaneously\n");
+				        printf("  -t iter   The amount of simulated time each child runs\n");
                 printf("  -i sec    Interval in simulated seconds to launch new children\n");
                 return 1;
         }
@@ -127,8 +127,8 @@ int main(int argc, char *argv[]) {
         pid_t pid; // Process ID of this child
         int start_sec; // Start time in seconds
         int start_nanosec; // Start time in nanoseconds
-        int ending_time_sec; // Ending time in seconds
-        int ending_time_nanosec; // Ending time in nanoseconds
+        int end_sec; // Ending time in seconds
+        int end_nano; // Ending time in nanoseconds
     };
 
     struct PCB table[MAX_PCB];
@@ -168,8 +168,8 @@ int main(int argc, char *argv[]) {
                        table[j].pid,
                        table[j].start_sec,
                        table[j].start_nanosec,
-                       table[j].ending_time_sec,
-                       table[j].ending_time_nanosec);
+                       table[j].end_sec,
+                       table[j].end_nano);
             }
         }
 
@@ -240,7 +240,7 @@ int main(int argc, char *argv[]) {
                     table[index].occupied = 1;
                     table[index].pid = child;
                     table[index].start_sec = *sec;
-                    table[index].start_nano = *nano;
+                    table[index].start_nanosec = *nano;
 
                     table[index].end_sec = *sec + run_sec;
                     table[index].end_nano = *nano + run_nano;
