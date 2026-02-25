@@ -5,17 +5,44 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/wait.h>
+#include <signal.h>
+#include <string.h>
+
+#define MAX_PCB 20
+#define BILLION 1000000000
+
+// Global variables for signal cleanup
+const int BUFF_SIZE = sizeof(int) * 2;
+int shm_key;
+int shm_id;
+int *clockptr;
+
+// Cleanup handler for SIGINT and SIGALRM
+void cleanup(int sig) {
+    printf("\nOSS: Caught signal %d. Cleaning up and terminating...\n", sig);
+
+    // Kill all children
+    kill(0, SIGTERM);
+
+    // Detach and remove shared memory
+    if (clockptr != NULL)
+        shmdt(clockptr);
+
+    shmctl(shm_id, IPC_RMID, NULL);
+
+    exit(1);
+}
 
 int main(int argc, char *argv[]) {
+
     int opt;
-    int n = -1, s = -1, t = -1, i = -1; // Initialize to -1
+    int n = -1;          // total processes to launch
+    int s = -1;          // max simultaneous
+    double t = -1;       // child runtime (float seconds)
+    double i = -1;       // interval between launches (float seconds)
 
-    // Shared memory
-    const int BUFF_SIZE = sizeof(int) * 2;
-    int shm_key;
-    int shm_id;
-
-    while ((opt = getopt (argc, argv, "hn:s:t:i:")) != -1) {
+    // Parse command line arguments
+    while ((opt = getopt(argc, argv, "hn:s:t:i:")) != -1) {
         switch (opt) {
             case 'h':
                 printf("Usage: %s [-h] [-n proc] [-s simul] [-t timelimitForChildren] [-i intervalInSecondsToLaunchChildren]\n", argv[0]);
@@ -32,10 +59,10 @@ int main(int argc, char *argv[]) {
                 s = atoi(optarg);
                 break;
             case 't':
-                t = atoi(optarg);
+                t = atof(optarg);
                 break;
             case 'i':
-                i = atoi(optarg);
+                i = atof(optarg);
                 break;
             default:
                 printf("Usage: %s [-h] [-n proc] [-s simul] [-t timelimitForChildren] [-i intervalInSecondsToLaunchChildren]\n", argv[0]);
@@ -48,12 +75,20 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Check if all required options are provided
-    if (n == -1 || s == -1 || t == -1 || i == -1) {
-        fprintf(stderr, "Error: Missing required options\n");
-        printf("Usage: %s [-h] [-n proc] [-s simul] [-t timelimitForChildren] [-i intervalInSecondsToLaunchChildren]\n", argv[0]);
+    if (n <= 0 || s <= 0 || t <= 0 || i < 0) {
+        fprintf(stderr, "Missing or invalid required arguments\n");
+        return 1;
     }
 
+    printf("OSS starting, PID:%d PPID:%d\n", getpid(), getppid());
+    printf("Called with:\n-n %d\n-s %d\n-t %.3f\n-i %.3f\n\n", n, s, t, i);
+
+    // Setup signal handling
+    signal(SIGINT, cleanup);
+    signal(SIGALRM, cleanup);
+    alarm(60);  // force terminate after 60 real seconds
+
+    // Create shared memory
     int shm_key = ftok("oss.c", 'R'); // Generate a unique key for shared memory
     if (shm_key <= 0) {
         fprintf(stderr, "Parent: Failed to generate shared memory key (ftok failed)\n");
@@ -66,20 +101,27 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    int *clock = (int *)shmat(shm_id, 0, 0); // Attach to shared memory
-    if (clock <= 0) {
+    clockptr = (int *)shmat(shm_id, NULL, 0); // Attach to shared memory
+    if (clockptr == (void *) -1) {
         fprintf(stderr, "Parent: Failed to attach to shared memory (shmat failed)\n");
         return 1;
     }
 
-    *sec = 0; // Initialize seconds
-    *nanosec = 0; // Initialize nanoseconds
+    // Initialize shared clock
+    int *sec = &clockptr[0];
+    int *nano = &clockptr[1];
 
-    int running = 0;
-    int total_launched = 0;
-    int status;
+    *sec = 0;
+    *nano = 0;
 
-    // PCB
+    // Convert runtime and interval to sec/nano
+    int run_sec = (int)t;
+    int run_nano = (int)((t - run_sec) * BILLION);
+
+    int interval_sec = (int)i;
+    int interval_nano = (int)((i - interval_sec) * BILLION);
+
+    // PCB structure
     struct PCB {
         int occupied; // 0 for free, 1 for occupied
         pid_t pid; // Process ID of this child
@@ -89,56 +131,136 @@ int main(int argc, char *argv[]) {
         int ending_time_nanosec; // Ending time in nanoseconds
     };
 
-    struct PCB processTable[20]; // Process table to keep track of child processes
+    struct PCB table[MAX_PCB];
 
-    // Main loop to manage child processes
+    // Initialize table
+    for (int j = 0; j < MAX_PCB; j++)
+        table[j].occupied = 0;
+
+    int running = 0;
+    int total_launched = 0;
+
+    int last_launch_sec = 0;
+    int last_launch_nano = 0;
+
+    // Main scheduling loop
     while (total_launched < n || running > 0) {
-        
-        // increment the simulated clock
-        (*nanosec) += 10000000; // Increment by 0.01 seconds
-        if (*nanosec >= 1000000000) {
-            *sec += 1;
-            *nanosec -= 1000000000;
+
+        // Increment simulated clock
+        *nano += 10000000;   // 10ms
+        if (*nano >= BILLION) {
+            (*sec)++;
+            *nano -= BILLION;
         }
 
-        // Every half a second simulated clock time, output the process table on the screen.
-        if (*nanosec % 500000000 == 0) {
-            printf("Current simulated time: %d seconds and %d nanoseconds\n", *sec, *nanosec);
-            // Here you would also print the process table (PCBs)
-            for (int i = 0; i < 18; i++) {
-                if (pcb[i].occupied == 1) {
-                    printf("PCB[%d]: PID=%d, Start=%d.%d, End=%d.%d\n", i, pcb[i].pid, pcb[i].start_sec, pcb[i].start_nanosec, pcb[i].ending_time_sec, pcb[i].ending_time_nanosec);
+        // Print process table every 0.5 seconds
+        if (*nano % 500000000 == 0) {
+
+            printf("\nOSS PID:%d SysClockS:%d SysClockNano:%d\n",
+                   getpid(), *sec, *nano);
+
+            printf("Entry Occupied PID StartS StartN EndS EndN\n");
+
+            for (int j = 0; j < MAX_PCB; j++) {
+                printf("%2d %8d %6d %6d %6d %6d %6d\n",
+                       j,
+                       table[j].occupied,
+                       table[j].pid,
+                       table[j].start_sec,
+                       table[j].start_nanosec,
+                       table[j].ending_time_sec,
+                       table[j].ending_time_nanosec);
+            }
+        }
+
+        // Non-blocking check for terminated child
+        int status;
+        pid_t pid = waitpid(-1, &status, WNOHANG);
+
+        if (pid > 0) {
+            running--;
+
+            // Clear PCB entry
+            for (int j = 0; j < MAX_PCB; j++) {
+                if (table[j].occupied && table[j].pid == pid) {
+                    table[j].occupied = 0;
+                    break;
                 }
             }
         }
 
-        // Wait for any child process to finish
-        pid_t pid = waitpid(-1, &status, WNOHANG);
-        if (pid > 0) {
-            // Update PCB for terminated child
-            running--;
-        }
-        
-        // Check if we can launch a new child process
-        if (running < s && total_launched < n && (*sec >= i * total_launched)) {
-            pid_t pid = fork();
-            if (pid == 0) {
-                // Child process
-                char *args[] = {"./worker", NULL}; // ./worker [seconds to run] [nanosec to run], for example
-                execlp(args[0],args[0],(char *)0);
+        // Check if enough interval time has passed
+        int diff_sec = *sec - last_launch_sec;
+        int diff_nano = *nano - last_launch_nano;
 
-                fprintf(stderr, "Child: Failed to execute worker\n");
-                return 1;
-            } else if (pid > 0) {
-                // Parent process
-                running++;
-                total_launched++;
-            } else {
-                fprintf(stderr, "Parent: Failed to fork\n");
-                return 1;
+        if (diff_nano < 0) {
+            diff_sec--;
+            diff_nano += BILLION;
+        }
+
+        int enough_time = 0;
+        if (diff_sec > interval_sec ||
+           (diff_sec == interval_sec && diff_nano >= interval_nano)) {
+            enough_time = 1;
+        }
+
+        // Launch new worker if allowed
+        if (running < s && total_launched < n && enough_time) {
+
+            int index = -1;
+            for (int j = 0; j < MAX_PCB; j++) {
+                if (!table[j].occupied) {
+                    index = j;
+                    break;
+                }
+            }
+
+            if (index != -1) {
+
+                pid_t child = fork();
+
+                if (child == 0) {
+                    char secStr[20], nanoStr[20];
+                    sprintf(secStr, "%d", run_sec);
+                    sprintf(nanoStr, "%d", run_nano);
+
+                    execl("./worker", "worker", secStr, nanoStr, NULL);
+                    perror("execl failed");
+                    exit(1);
+                }
+
+                if (child > 0) {
+
+                    running++;
+                    total_launched++;
+
+                    last_launch_sec = *sec;
+                    last_launch_nano = *nano;
+
+                    table[index].occupied = 1;
+                    table[index].pid = child;
+                    table[index].start_sec = *sec;
+                    table[index].start_nano = *nano;
+
+                    table[index].end_sec = *sec + run_sec;
+                    table[index].end_nano = *nano + run_nano;
+
+                    if (table[index].end_nano >= BILLION) {
+                        table[index].end_sec++;
+                        table[index].end_nano -= BILLION;
+                    }
+                }
             }
         }
     }
+
+    // Final Report
+    printf("\nOSS PID:%d Terminating\n", getpid());
+    printf("%d workers were launched and terminated\n", total_launched);
+
+    // Cleanup
+    shmdt(clockptr);
+    shmctl(shm_id, IPC_RMID, NULL);
 
     return 0;
 }

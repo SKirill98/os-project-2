@@ -2,16 +2,16 @@ CC = gcc
 CFLAGS = -Wall -g
 
 OSS = oss
-USER = user
+WORKER = worker
 
-all: $(OSS) $(USER)
+all: $(OSS) $(WORKER)
 
 $(OSS): oss.c
 	$(CC) $(CFLAGS) oss.c -o $(OSS)
 
-$(USER): user.c
-	$(CC) $(CFLAGS) worker.c -o $(USER)
+$(WORKER): worker.c
+	$(CC) $(CFLAGS) worker.c -o $(WORKER)
 
 clean:
-	rm -f $(OSS) $(USER) *.o
+	rm -f $(OSS) $(WORKER) *.o
 
